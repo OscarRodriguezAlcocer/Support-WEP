@@ -1,6 +1,6 @@
-
 [build]
-  command = "node generate-file-list.js"
+  # Primero instala las dependencias, luego ejecuta nuestro script
+  command = "npm install && node generate-file-list.js"
   publish = "."
 
 [functions]
