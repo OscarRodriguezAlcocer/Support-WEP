@@ -305,9 +305,9 @@
 
 
         // --- CONFIGURACIÓN DE API --- 
-        const OPENROUTER_API_KEY = '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';
+        
         let OPENROUTER_MODEL = '';
-        const OPENROUTER_API_URL = 'https://openrouter.ai/api/v1/chat/completions';
+        const API_URL = '/.netlify/functions/proxy-openrouter';
         const OPENROUTER_MODELS_URL = 'https://openrouter.ai/api/v1/models';
         const ADMIN_PASSWORD = 'admin123'; 
 
@@ -622,10 +622,7 @@
             const response = await fetch(OPENROUTER_API_URL, {
                 method: 'POST',
                 headers: {
-                    'Authorization': `Bearer ${OPENROUTER_API_KEY}`,
-                    'Content-Type': 'application/json',
-                    'HTTP-Referer': 'https://localhost', 
-                    'X-Title': 'Agente RAG'
+                    'Content-Type': 'application/json'
                 },
                 body: JSON.stringify(body),
             });

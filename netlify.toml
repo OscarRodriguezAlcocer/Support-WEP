@@ -1,3 +1,7 @@
+
 [build]
   command = "node generate-file-list.js"
   publish = "."
+
+[functions]
+  directory = "netlify/functions"
