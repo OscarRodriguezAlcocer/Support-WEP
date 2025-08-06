@@ -616,7 +616,7 @@
         // --- FUNCIONES DE API (OPENROUTER) --- 
         async function callOpenRouter(messages) {
             const body = { model: OPENROUTER_MODEL, messages: messages };
-            const response = await fetch(OPENROUTER_API_URL, {
+            const response = await fetch(API_URL, {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json'
