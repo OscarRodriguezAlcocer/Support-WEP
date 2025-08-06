@@ -1,4 +1,6 @@
+
 const fetch = require('node-fetch');
+require('dotenv').config(); // Carga las variables de entorno desde .env
 
 exports.handler = async function(event, context) {
     // Solo permitir peticiones POST
