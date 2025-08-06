@@ -1,0 +1,13 @@
+
+# Configuración para Netlify
+
+[build]
+  # Comando que Netlify ejecutará para construir tu sitio.
+  # Primero, instalará las dependencias (aunque no tenemos), 
+  # luego ejecutará nuestro script para generar la lista de archivos.
+  command = "node generate-file-list.js"
+
+  # El directorio que Netlify desplegará. 
+  # En este caso, es el directorio raíz de tu proyecto.
+  publish = "."
+

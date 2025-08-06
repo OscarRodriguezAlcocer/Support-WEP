@@ -1,0 +1,1024 @@
+<!DOCTYPE html>
+<html lang="es" class="">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Agente RAG con OpenRouter</title>
+    
+    <!-- Tailwind CSS con plugin de tipografía -->
+    <script src="https://cdn.tailwindcss.com?plugins=typography"></script>
+    
+    <!-- Google Fonts: Inter -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+
+    <style>
+        /* Estilos personalizados para la aplicación */
+        body {
+            font-family: 'Inter', sans-serif;
+        }
+        /* Animación para la aparición de mensajes */
+        .message-fade-in {
+            animation: fadeIn 0.5s ease-in-out;
+        }
+        @keyframes fadeIn {
+            from { opacity: 0; transform: translateY(10px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+        /* Estilo para la barra de desplazamiento */
+        #chat-container::-webkit-scrollbar, .sidebar-scroll::-webkit-scrollbar {
+            width: 8px;
+        }
+        #chat-container::-webkit-scrollbar-track, .sidebar-scroll::-webkit-scrollbar-track {
+            background: transparent;
+        }
+        #chat-container::-webkit-scrollbar-thumb, .sidebar-scroll::-webkit-scrollbar-thumb {
+            background: #d1d5db;
+            border-radius: 4px;
+        }
+        .dark #chat-container::-webkit-scrollbar-thumb, .dark .sidebar-scroll::-webkit-scrollbar-thumb {
+            background: #4b5563;
+        }
+        #chat-container::-webkit-scrollbar-thumb:hover, .sidebar-scroll::-webkit-scrollbar-thumb:hover {
+            background: #9ca3af;
+        }
+        .dark #chat-container::-webkit-scrollbar-thumb:hover, .dark .sidebar-scroll::-webkit-scrollbar-thumb:hover {
+            background: #6b7280;
+        }
+        /* Estilos para el Modal */
+        #summary-modal, #settings-modal, #admin-login-modal, #confirm-delete-modal {
+            transition: opacity 0.3s ease;
+        }
+        .modal-content {
+            transition: transform 0.3s ease;
+        }
+        /* Ocultar la barra de desplazamiento del input */
+        #message-input::-webkit-scrollbar {
+            display: none;
+        }
+        #message-input {
+            -ms-overflow-style: none;  /* IE and Edge */
+            scrollbar-width: none;  /* Firefox */
+        }
+        .item-btns {
+            opacity: 0;
+            transition: opacity 0.2s ease-in-out;
+        }
+        .history-item:hover .item-btns, .document-item:hover .item-btns {
+            opacity: 1;
+        }
+        .notification {
+            transition: opacity 0.3s, transform 0.3s;
+        }
+    </style>
+    <script>
+        // Configuración de Tailwind para el modo oscuro
+        tailwind.config = {
+            darkMode: 'class',
+        }
+    </script>
+</head>
+<body class="bg-gray-100 dark:bg-gray-900 text-gray-800 dark:text-gray-200 overflow-hidden">
+
+    <div class="flex h-screen w-full">
+        <!-- Barra lateral de Historial -->
+        <aside id="sidebar" class="w-64 bg-white/80 dark:bg-gray-800/80 backdrop-blur-sm p-4 flex flex-col border-r border-gray-200 dark:border-gray-700 fixed inset-y-0 left-0 z-30 transform -translate-x-full transition-transform duration-300 ease-in-out">
+            <div class="space-y-2 mb-4">
+                <button id="home-btn" class="flex items-center gap-3 w-full p-2 rounded-lg bg-blue-500 text-white font-semibold hover:bg-blue-600 transition-colors">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-home"><path d="m3 9 9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><polyline points="9 22 9 12 15 12 15 22"/></svg>
+                    <span>Inicio</span>
+                </button>
+                <button id="new-chat-btn" class="flex items-center justify-between w-full p-2 rounded-lg hover:bg-gray-200 dark:hover:bg-gray-700 transition-colors">
+                    <span class="font-semibold">Nueva conversación</span>
+                    <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-plus-square"><rect width="18" height="18" x="3" y="3" rx="2"/><path d="M8 12h8"/><path d="M12 8v8"/></svg>
+                </button>
+            </div>
+            <div class="flex-grow flex flex-col overflow-hidden">
+                <h2 class="font-bold text-sm text-gray-500 dark:text-gray-400 px-2 mb-2">Historial</h2>
+                <div class="flex-1 overflow-y-auto sidebar-scroll mb-4">
+                    <ul id="history-list" class="space-y-1">
+                        <!-- El historial de chats se insertará aquí -->
+                    </ul>
+                </div>
+                
+                <div id="documents-section" class="flex-1 flex flex-col overflow-hidden">
+                    <div class="flex justify-between items-center mb-2">
+                        <h2 class="font-bold text-sm text-gray-500 dark:text-gray-400 px-2">Documentos</h2>
+                    </div>
+                    <div class="flex-1 overflow-y-auto sidebar-scroll">
+                        <ul id="document-list" class="space-y-1">
+                            <!-- La lista de documentos se insertará aquí -->
+                        </ul>
+                    </div>
+                </div>
+            </div>
+
+            <div class="mt-auto pt-4 border-t border-gray-200 dark:border-gray-700">
+                <button id="admin-login-btn" class="flex items-center gap-2 w-full p-2 rounded-lg hover:bg-gray-200 dark:hover:bg-gray-700 transition-colors">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-log-in"><path d="M15 3h4a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2h-4"/><polyline points="10 17 15 12 10 7"/><line x1="15" x2="3" y1="12" y2="12"/></svg>
+                    <span>Login Admin</span>
+                </button>
+                 <button id="settings-btn" class="flex items-center gap-2 w-full p-2 rounded-lg hover:bg-gray-200 dark:hover:bg-gray-700 transition-colors hidden">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-settings"><path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 0 2l-.15.08a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.38a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1 0-2l.15-.08a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z"/><circle cx="12" cy="12" r="3"/></svg>
+                    <span>Ajustes</span>
+                </button>
+            </div>
+        </aside>
+
+        <!-- Overlay para cerrar la barra lateral en móvil -->
+        <div id="sidebar-overlay" class="fixed inset-0 bg-black/50 z-20 hidden"></div>
+
+        <!-- Contenido Principal del Chat -->
+        <div id="main-content" class="flex-1 flex flex-col transition-all duration-300 ease-in-out">
+            <!-- Encabezado -->
+            <header class="p-4 flex justify-between items-center w-full border-b border-gray-200 dark:border-gray-700/50">
+                <div class="flex items-center gap-2">
+                    <button id="menu-btn" class="text-gray-500 hover:text-gray-800 dark:text-gray-400 dark:hover:text-white p-2 rounded-full transition-colors">
+                        <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-menu"><line x1="4" x2="20" y1="12" y2="12"/><line x1="4" x2="20" y1="6" y2="6"/><line x1="4" x2="20" y1="18" y2="18"/></svg>
+                    </button>
+                    <div class="flex items-center gap-2">
+                        <span id="chat-title" class="font-semibold text-lg">Asistente</span>
+                        <span id="admin-badge" class="hidden text-blue-500" title="Modo Administrador">🛡️</span>
+                    </div>
+                </div>
+                <div class="flex items-center gap-2">
+                    <button id="summarize-btn" title="✨ Resumir Conversación" class="text-gray-500 hover:text-gray-800 dark:text-gray-400 dark:hover:text-white p-2 rounded-full transition-colors disabled:opacity-50 disabled:cursor-not-allowed">
+                        <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-book-text"><path d="M4 19.5v-15A2.5 2.5 0 0 1 6.5 2H20v20H6.5a2.5 2.5 0 0 1 0-5H20"/><path d="M8 7h6"/><path d="M8 11h8"/></svg>
+                    </button>
+                    <button id="theme-toggle-btn" title="Cambiar Tema" class="text-gray-500 hover:text-gray-800 dark:text-gray-400 dark:hover:text-white p-2 rounded-full transition-colors">
+                        <svg id="theme-icon-light" xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-sun"><circle cx="12" cy="12" r="4"/><path d="M12 2v2"/><path d="M12 20v2"/><path d="m4.93 4.93 1.41 1.41"/><path d="m17.66 17.66 1.41 1.41"/><path d="M2 12h2"/><path d="M20 12h2"/><path d="m6.34 17.66-1.41 1.41"/><path d="m19.07 4.93-1.41 1.41"/></svg>
+                        <svg id="theme-icon-dark" xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-moon hidden"><path d="M12 3a6 6 0 0 0 9 9 9 9 0 1 1-9-9Z"/></svg>
+                    </button>
+                </div>
+            </header>
+
+            <!-- Área del Chat -->
+            <main id="chat-area" class="flex-1 flex flex-col overflow-y-auto">
+                <!-- Pantalla de Bienvenida -->
+                <div id="welcome-screen" class="flex-1 flex flex-col items-center justify-center p-8 text-center">
+                    <h1 class="text-5xl font-bold bg-gradient-to-r from-blue-600 to-purple-600 text-transparent bg-clip-text mb-4">Hola</h1>
+                    <p class="text-2xl text-gray-500 dark:text-gray-400 mb-10">¿Cómo te puedo ayudar hoy?</p>
+                    <div id="suggestion-container" class="grid grid-cols-1 md:grid-cols-2 gap-4 w-full max-w-2xl">
+                        <!-- Las sugerencias dinámicas se insertarán aquí -->
+                    </div>
+                </div>
+
+                <!-- Contenedor de Mensajes (inicialmente vacío) -->
+                <div id="chat-container" class="w-full max-w-3xl mx-auto p-4 space-y-8">
+                    <!-- Los mensajes se insertarán aquí -->
+                </div>
+            </main>
+            
+            <!-- Indicador de "Escribiendo..." (oculto) -->
+            <div id="loading-indicator" class="hidden w-full max-w-3xl mx-auto p-4">
+                 <div class="flex items-start gap-4">
+                    <div class="bg-gray-200 dark:bg-gray-700 p-2 rounded-full flex-shrink-0 flex items-center justify-center h-10 w-10">
+                        <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-bot"><path d="M12 8V4H8"/><rect width="16" height="12" x="4" y="8" rx="2"/><path d="M2 14h2"/><path d="M20 14h2"/><path d="M15 13v2"/><path d="M9 13v2"/></svg>
+                    </div>
+                    <div class="bg-gray-100 dark:bg-gray-700/50 rounded-xl p-4">
+                        <div class="flex items-center gap-2">
+                            <div class="flex space-x-1">
+                               <div class="w-2 h-2 bg-gray-500 rounded-full animate-bounce [animation-delay:-0.3s]"></div>
+                               <div class="w-2 h-2 bg-gray-500 rounded-full animate-bounce [animation-delay:-0.15s]"></div>
+                               <div class="w-2 h-2 bg-gray-500 rounded-full animate-bounce"></div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Formulario de Entrada -->
+            <footer class="p-4 w-full flex justify-center">
+                <form id="chat-form" class="w-full max-w-3xl bg-white/60 dark:bg-gray-800/60 backdrop-blur-sm rounded-2xl p-2 flex items-center gap-2 border border-gray-200 dark:border-gray-700">
+                    <textarea 
+                        id="message-input"
+                        placeholder="Escribe tu pregunta aquí..."
+                        rows="1"
+                        class="flex-1 p-3 bg-transparent focus:outline-none resize-none"
+                    ></textarea>
+                    <button 
+                        type="button"
+                        id="rephrase-btn"
+                        title="✨ Refrasear Pregunta"
+                        class="p-2 text-gray-500 dark:text-gray-400 rounded-full hover:bg-gray-200 dark:hover:bg-gray-700 active:bg-gray-300 dark:active:bg-gray-600 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                    >
+                        <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-wand-2"><path d="m21.64 3.64-1.28-1.28a1.21 1.21 0 0 0-1.72 0L2.36 18.64a1.21 1.21 0 0 0 0 1.72l1.28 1.28a1.21 1.21 0 0 0 1.72 0L21.64 5.36a1.21 1.21 0 0 0 0-1.72Z"/><path d="m14 7 3 3"/><path d="M5 6v4"/><path d="M19 14v4"/><path d="M10 2v2"/><path d="M7 8H3"/><path d="M21 16h-4"/><path d="M11 3H9"/></svg>
+                    </button>
+                    <button 
+                        type="submit"
+                        id="send-btn"
+                        title="Enviar"
+                        class="w-10 h-10 bg-gray-200 dark:bg-gray-700 text-gray-500 dark:text-gray-300 font-semibold rounded-full hover:bg-blue-600 dark:hover:bg-blue-600 hover:text-white dark:hover:text-white transition-colors disabled:bg-gray-200 dark:disabled:bg-gray-700 disabled:text-gray-400 dark:disabled:text-gray-500 disabled:cursor-not-allowed flex items-center justify-center"
+                        disabled
+                    >
+                        <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-arrow-up"><path d="m5 12 7-7 7 7"/><path d="M12 19V5"/></svg>
+                    </button>
+                </form>
+            </footer>
+        </div>
+    </div>
+
+    <!-- Modal para el Resumen -->
+    <div id="summary-modal" class="fixed inset-0 bg-black bg-opacity-60 flex items-center justify-center p-4 z-50 hidden pointer-events-none">
+        <div class="modal-content bg-white dark:bg-gray-800 rounded-2xl shadow-xl w-full max-w-lg p-6 transform scale-95">
+            <div class="flex justify-between items-center mb-4">
+                <h2 class="text-xl font-bold text-gray-800 dark:text-gray-100">✨ Resumen de la Conversación</h2>
+                <button id="close-modal-btn" class="text-gray-500 hover:text-gray-800 dark:text-gray-400 dark:hover:text-white">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
+                </button>
+            </div>
+            <div id="summary-content" class="text-gray-600 dark:text-gray-300 max-h-[60vh] overflow-y-auto"></div>
+        </div>
+    </div>
+
+    <!-- Modal para Ajustes -->
+    <div id="settings-modal" class="fixed inset-0 bg-black bg-opacity-60 flex items-center justify-center p-4 z-50 hidden pointer-events-none">
+        <div class="modal-content bg-white dark:bg-gray-800 rounded-2xl shadow-xl w-full max-w-lg p-6 transform scale-95">
+            <div class="flex justify-between items-center mb-6">
+                <h2 class="text-xl font-bold text-gray-800 dark:text-gray-100">⚙️ Ajustes</h2>
+                <button id="close-settings-modal-btn" class="text-gray-500 hover:text-gray-800 dark:text-gray-400 dark:hover:text-white">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
+                </button>
+            </div>
+            <div class="space-y-6">
+                <div>
+                    <label for="model-select" class="block mb-2 text-sm font-medium text-gray-900 dark:text-white">Seleccionar Modelo Gratuito</label>
+                    <select id="model-select" class="bg-gray-50 border border-gray-300 text-gray-900 text-sm rounded-lg focus:ring-blue-500 focus:border-blue-500 block w-full p-2.5 dark:bg-gray-700 dark:border-gray-600 dark:placeholder-gray-400 dark:text-white">
+                        <option>Cargando modelos...</option>
+                    </select>
+                </div>
+                <button id="save-settings-btn" class="w-full text-white bg-blue-600 hover:bg-blue-700 focus:ring-4 focus:outline-none focus:ring-blue-300 font-medium rounded-lg text-sm px-5 py-2.5 text-center dark:bg-blue-500 dark:hover:bg-blue-600 dark:focus:ring-blue-800">Guardar Cambios</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Modal para Login de Admin -->
+    <div id="admin-login-modal" class="fixed inset-0 bg-black bg-opacity-60 flex items-center justify-center p-4 z-50 hidden pointer-events-none">
+        <div class="modal-content bg-white dark:bg-gray-800 rounded-2xl shadow-xl w-full max-w-sm p-6 transform scale-95">
+            <h2 class="text-xl font-bold text-gray-800 dark:text-gray-100 mb-4">Acceso de Administrador</h2>
+            <form id="admin-login-form">
+                <div>
+                    <label for="admin-password-input" class="block mb-2 text-sm font-medium text-gray-900 dark:text-white">Contraseña</label>
+                    <input type="password" id="admin-password-input" class="bg-gray-50 border border-gray-300 text-gray-900 text-sm rounded-lg focus:ring-blue-500 focus:border-blue-500 block w-full p-2.5 dark:bg-gray-700 dark:border-gray-600 dark:placeholder-gray-400 dark:text-white" required>
+                </div>
+                <div class="mt-6 flex justify-end gap-4">
+                    <button type="button" id="cancel-admin-login-btn" class="py-2.5 px-5 text-sm font-medium text-gray-900 focus:outline-none bg-white rounded-lg border border-gray-200 hover:bg-gray-100 dark:bg-gray-800 dark:text-gray-400 dark:border-gray-600 dark:hover:text-white dark:hover:bg-gray-700">Cancelar</button>
+                    <button type="submit" class="text-white bg-blue-600 hover:bg-blue-700 rounded-lg text-sm px-5 py-2.5 text-center">Entrar</button>
+                </div>
+            </form>
+        </div>
+    </div>
+    
+    <!-- Modal para Confirmar Eliminación -->
+    <div id="confirm-delete-modal" class="fixed inset-0 bg-black bg-opacity-60 flex items-center justify-center p-4 z-50 hidden pointer-events-none">
+        <div class="modal-content bg-white dark:bg-gray-800 rounded-2xl shadow-xl w-full max-w-sm p-6 transform scale-95">
+            <h2 class="text-xl font-bold text-gray-800 dark:text-gray-100 mb-4">Confirmar Eliminación</h2>
+            <p id="confirm-delete-text" class="text-gray-600 dark:text-gray-300 mb-6">¿Estás seguro de que quieres eliminar esta conversación?</p>
+            <div class="mt-6 flex justify-end gap-4">
+                <button type="button" id="cancel-delete-btn" class="py-2.5 px-5 text-sm font-medium text-gray-900 focus:outline-none bg-white rounded-lg border border-gray-200 hover:bg-gray-100 dark:bg-gray-800 dark:text-gray-400 dark:border-gray-600 dark:hover:text-white dark:hover:bg-gray-700">Cancelar</button>
+                <button type="button" id="confirm-delete-btn" class="text-white bg-red-600 hover:bg-red-700 rounded-lg text-sm px-5 py-2.5 text-center">Eliminar</button>
+            </div>
+        </div>
+    </div>
+
+
+    <!-- Contenedor de Notificaciones -->
+    <div id="notification-container" class="fixed bottom-5 right-5 w-80 z-[100] space-y-2"></div>
+
+
+    <script>
+        // --- ELEMENTOS DEL DOM ---
+        const chatForm = document.getElementById('chat-form');
+        const messageInput = document.getElementById('message-input');
+        const chatContainer = document.getElementById('chat-container');
+        const loadingIndicator = document.getElementById('loading-indicator');
+        const rephraseBtn = document.getElementById('rephrase-btn');
+        const summarizeBtn = document.getElementById('summarize-btn');
+        const summaryModal = document.getElementById('summary-modal');
+        const summaryContent = document.getElementById('summary-content');
+        const closeModalBtn = document.getElementById('close-modal-btn');
+        const sendBtn = document.getElementById('send-btn');
+        const welcomeScreen = document.getElementById('welcome-screen');
+        const suggestionContainer = document.getElementById('suggestion-container');
+        const themeToggleBtn = document.getElementById('theme-toggle-btn');
+        const themeIconLight = document.getElementById('theme-icon-light');
+        const themeIconDark = document.getElementById('theme-icon-dark');
+        const homeBtn = document.getElementById('home-btn');
+        const newChatBtn = document.getElementById('new-chat-btn');
+        const historyList = document.getElementById('history-list');
+        const chatTitle = document.getElementById('chat-title');
+        const sidebar = document.getElementById('sidebar');
+        const menuBtn = document.getElementById('menu-btn');
+        const sidebarOverlay = document.getElementById('sidebar-overlay');
+        const mainContent = document.getElementById('main-content');
+        const settingsBtn = document.getElementById('settings-btn');
+        const settingsModal = document.getElementById('settings-modal');
+        const closeSettingsModalBtn = document.getElementById('close-settings-modal-btn');
+        const saveSettingsBtn = document.getElementById('save-settings-btn');
+        const modelSelect = document.getElementById('model-select');
+        const documentsSection = document.getElementById('documents-section');
+        const documentList = document.getElementById('document-list');
+        const adminLoginBtn = document.getElementById('admin-login-btn');
+        const adminBadge = document.getElementById('admin-badge');
+        const adminLoginModal = document.getElementById('admin-login-modal');
+        const adminLoginForm = document.getElementById('admin-login-form');
+        const adminPasswordInput = document.getElementById('admin-password-input');
+        const cancelAdminLoginBtn = document.getElementById('cancel-admin-login-btn');
+        const notificationContainer = document.getElementById('notification-container');
+        const confirmDeleteModal = document.getElementById('confirm-delete-modal');
+        const confirmDeleteBtn = document.getElementById('confirm-delete-btn');
+        const cancelDeleteBtn = document.getElementById('cancel-delete-btn');
+
+
+        // --- ESTADO DE LA APLICACIÓN ---
+        let conversations = [];
+        let activeConversationId = null;
+        let documents = [];
+        let isAdmin = false;
+        let deleteTargetId = null; 
+        let deleteTargetType = null;
+
+
+        // --- CONFIGURACIÓN DE API ---
+        const OPENROUTER_API_KEY = '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';
+        let OPENROUTER_MODEL = '';
+        const OPENROUTER_API_URL = 'https://openrouter.ai/api/v1/chat/completions';
+        const OPENROUTER_MODELS_URL = 'https://openrouter.ai/api/v1/models';
+        const ADMIN_PASSWORD = 'admin123'; 
+
+        // --- MANEJO DEL ESTADO Y LOCALSTORAGE ---
+        const saveConversations = () => localStorage.setItem('conversations', JSON.stringify(conversations));
+        const loadConversations = () => conversations = JSON.parse(localStorage.getItem('conversations')) || [];
+        
+        const loadDocuments = async () => {
+            try {
+                // Carga la lista de archivos desde el JSON generado por el script de build.
+                const response = await fetch('./document-list.json'); 
+                if (!response.ok) {
+                    throw new Error(`HTTP error! status: ${response.status}`);
+                }
+                const fileNames = await response.json();
+                documents = fileNames.map(name => ({ id: name, title: name, content: null }));
+                showNotification('Lista de documentos cargada.', 'success');
+            } catch (error) {
+                console.error('Error al cargar la lista de documentos:', error);
+                documents = [];
+                showNotification('No se pudo cargar la lista de documentos (document-list.json). Asegúrate de que el archivo exista y sea accesible.', 'error');
+            }
+            renderDocumentList();
+        };
+
+        const loadSettings = () => {
+            OPENROUTER_MODEL = localStorage.getItem('openrouterModel') || 'meta-llama/llama-3-8b-instruct:free';
+        };
+
+        // --- LÓGICA DE RENDERIZADO ---
+        const renderSidebar = () => {
+            historyList.innerHTML = '';
+            if (conversations.length === 0) {
+                historyList.innerHTML = `<li class="px-2 text-sm text-gray-400">No hay chats.</li>`;
+            } else {
+                conversations.forEach(conv => {
+                    const item = document.createElement('li');
+                    item.dataset.id = conv.id;
+                    item.className = `history-item group flex items-center justify-between p-2 rounded-lg cursor-pointer transition-colors ${conv.id === activeConversationId ? 'bg-blue-100 dark:bg-blue-900/50' : 'hover:bg-gray-200 dark:hover:bg-gray-700'}`;
+                    item.innerHTML = `
+                        <span class="truncate flex-1">${escapeHTML(conv.title)}</span>
+                        <div class="item-btns flex items-center gap-1 ml-2">
+                            <button class="edit-btn p-1 hover:text-blue-500"><svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 3a2.85 2.83 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5Z"/></svg></button>
+                            <button class="delete-btn p-1 hover:text-red-500"><svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6"/><path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg></button>
+                        </div>`;
+                    item.querySelector('.edit-btn').addEventListener('click', (e) => { e.stopPropagation(); handleEditTitle(conv.id); });
+                    item.querySelector('.delete-btn').addEventListener('click', (e) => { e.stopPropagation(); handleDeleteChat(conv.id); });
+                    item.addEventListener('click', () => handleSelectChat(conv.id));
+                    historyList.appendChild(item);
+                });
+            }
+        };
+        
+        const renderDocumentList = () => {
+            documentList.innerHTML = '';
+            if (documents.length === 0) {
+                documentList.innerHTML = `<li class="px-2 text-sm text-gray-400">No hay documentos.</li>`;
+            } else {
+                documents.forEach(doc => {
+                    const item = document.createElement('li');
+                    item.dataset.id = doc.id;
+                    item.className = `document-item group flex items-center justify-between p-2 rounded-lg hover:bg-gray-200 dark:hover:bg-gray-700`;
+                    item.innerHTML = `<span class="truncate flex-1 text-sm">${escapeHTML(doc.title)}</span>`;
+                    documentList.appendChild(item);
+                });
+            }
+        };
+
+        const renderActiveChat = () => {
+            const conversation = conversations.find(c => c.id === activeConversationId);
+            chatContainer.innerHTML = '';
+            
+            if (!conversation) {
+                welcomeScreen.style.display = 'flex';
+                chatTitle.textContent = 'Asistente';
+                generateSuggestions();
+                toggleForm(true); 
+            } else {
+                welcomeScreen.style.display = 'none';
+                chatTitle.textContent = conversation.title;
+                conversation.history.forEach(msg => {
+                    if (msg.role === 'user') displayUserMessage(msg.content, false);
+                    else displayBotMessage(msg.content, null, false);
+                });
+            }
+            scrollToBottom();
+        };
+
+        // --- LÓGICA DE MANEJO DE CHATS ---
+        const handleNewChat = () => {
+            activeConversationId = null;
+            localStorage.removeItem('activeConversationId');
+            renderSidebar();
+            renderActiveChat();
+            messageInput.focus();
+            if (window.innerWidth < 768) closeSidebar();
+        };
+
+        const handleSelectChat = (id) => {
+            if (id === activeConversationId) return;
+            activeConversationId = id;
+            localStorage.setItem('activeConversationId', id);
+            renderSidebar();
+            renderActiveChat();
+            if (window.innerWidth < 768) closeSidebar();
+        };
+
+        const handleEditTitle = (id) => {
+            const item = historyList.querySelector(`li[data-id="${id}"]`);
+            const span = item.querySelector('span');
+            const currentTitle = span.textContent;
+            
+            const input = document.createElement('input');
+            input.type = 'text';
+            input.value = currentTitle;
+            input.className = 'w-full bg-transparent border-b border-blue-500 focus:outline-none';
+            
+            span.replaceWith(input);
+            input.focus();
+            input.select();
+
+            const saveTitle = () => {
+                const newTitle = input.value.trim();
+                if (newTitle && newTitle !== currentTitle) {
+                    const convIndex = conversations.findIndex(c => c.id === id);
+                    if (convIndex > -1) {
+                        conversations[convIndex].title = newTitle;
+                        saveConversations();
+                    }
+                }
+                renderSidebar();
+                renderActiveChat();
+            };
+
+            input.addEventListener('blur', saveTitle);
+            input.addEventListener('keydown', (e) => {
+                if (e.key === 'Enter') { e.preventDefault(); saveTitle(); } 
+                else if (e.key === 'Escape') { input.replaceWith(span); }
+            });
+        };
+
+        const handleDeleteChat = (id) => {
+            showConfirmDeleteModal(id, 'chat');
+        };
+
+        // --- LÓGICA DE CONFIRMACIÓN DE ELIMINACIÓN ---
+        const showConfirmDeleteModal = (id, type) => {
+            deleteTargetId = id;
+            deleteTargetType = type;
+            const text = type === 'chat' ? '¿Estás seguro de que quieres eliminar esta conversación?' : '¿Estás seguro de que quieres eliminar este documento?';
+            document.getElementById('confirm-delete-text').textContent = text;
+            confirmDeleteModal.classList.remove('hidden', 'pointer-events-none');
+            confirmDeleteModal.style.opacity = '1';
+            confirmDeleteModal.querySelector('.modal-content').style.transform = 'scale(1)';
+        };
+
+        const hideConfirmDeleteModal = () => {
+            confirmDeleteModal.style.opacity = '0';
+            confirmDeleteModal.querySelector('.modal-content').style.transform = 'scale(0.95)';
+            setTimeout(() => {
+                confirmDeleteModal.classList.add('hidden', 'pointer-events-none');
+                deleteTargetId = null;
+                deleteTargetType = null;
+            }, 300);
+        };
+
+        const confirmDelete = () => {
+            if (!deleteTargetId || !deleteTargetType) return;
+
+            if (deleteTargetType === 'chat') {
+                conversations = conversations.filter(c => c.id !== deleteTargetId);
+                if (activeConversationId === deleteTargetId) {
+                    activeConversationId = null;
+                    localStorage.removeItem('activeConversationId');
+                }
+                saveConversations();
+                renderSidebar();
+                renderActiveChat();
+            } 
+            hideConfirmDeleteModal();
+        };
+
+
+        // --- LÓGICA DE ADMINISTRADOR ---
+        const showAdminLoginModal = () => {
+            adminLoginForm.reset();
+            adminLoginModal.classList.remove('hidden', 'pointer-events-none');
+            adminLoginModal.style.opacity = '1';
+            adminLoginModal.querySelector('.modal-content').style.transform = 'scale(1)';
+        };
+
+        const hideAdminLoginModal = () => {
+            adminLoginModal.style.opacity = '0';
+            adminLoginModal.querySelector('.modal-content').style.transform = 'scale(0.95)';
+            setTimeout(() => { adminLoginModal.classList.add('hidden', 'pointer-events-none'); }, 300);
+        };
+        
+        const handleAdminLogin = () => {
+            if (isAdmin) { // Logout
+                isAdmin = false;
+                showNotification("Sesión de administrador cerrada.", "info");
+                updateAdminUI();
+                return;
+            }
+            showAdminLoginModal();
+        };
+        
+        const handleAdminFormSubmit = (e) => {
+            e.preventDefault();
+            const password = adminPasswordInput.value;
+            if (password === ADMIN_PASSWORD) {
+                isAdmin = true;
+                showNotification("Login exitoso. Modo administrador activado.", "success");
+            } else {
+                showNotification("Contraseña incorrecta.", "error");
+            }
+            hideAdminLoginModal();
+            updateAdminUI();
+        };
+        
+        const updateAdminUI = () => {
+            if(isAdmin) {
+                adminLoginBtn.innerHTML = `
+                    <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-log-out"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" x2="9" y1="12" y2="12"/></svg>
+                    <span>Logout</span>`;
+                settingsBtn.classList.remove('hidden');
+                adminBadge.classList.remove('hidden');
+            } else {
+                adminLoginBtn.innerHTML = `
+                    <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-log-in"><path d="M15 3h4a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2h-4"/><polyline points="10 17 15 12 10 7"/><line x1="15" x2="3" y1="12" y2="12"/></svg>
+                    <span>Login Admin</span>`;
+                settingsBtn.classList.add('hidden');
+                adminBadge.classList.add('hidden');
+            }
+        };
+
+        // --- LÓGICA PRINCIPAL DEL CHAT (RAG) ---
+        async function handleUserMessage(userInput) {
+            if (!OPENROUTER_API_KEY) {
+                displayErrorMessage("La API Key de OpenRouter no está configurada.", true, false, userInput);
+                return;
+            }
+
+            if (!activeConversationId) {
+                activeConversationId = crypto.randomUUID();
+                conversations.unshift({ id: activeConversationId, title: 'Nueva conversación', history: [] });
+            }
+            
+            if (welcomeScreen.style.display !== 'none') welcomeScreen.style.display = 'none';
+
+            const convIndex = conversations.findIndex(c => c.id === activeConversationId);
+            if (convIndex === -1) return; 
+
+            const existingError = chatContainer.querySelector('.error-message');
+            if(existingError) existingError.parentElement.remove();
+
+            conversations[convIndex].history.push({ role: 'user', content: userInput });
+            displayUserMessage(userInput, true);
+            
+            if (conversations[convIndex].history.length === 1) {
+                conversations[convIndex].title = userInput.substring(0, 30) + (userInput.length > 30 ? '...' : '');
+                renderSidebar();
+                chatTitle.textContent = conversations[convIndex].title;
+            }
+            
+            saveConversations();
+            
+            messageInput.value = '';
+            updateSendButtonState();
+            autoResizeTextarea();
+            toggleForm(false);
+            loadingIndicator.classList.remove('hidden');
+            scrollToBottom();
+
+            try {
+                // Fetch document content on demand if not already loaded
+                for (let doc of documents) {
+                    if (doc.content === null) {
+                        // En Netlify, los archivos de la carpeta 'documentos' estarán en la misma ruta.
+                        const response = await fetch(`./documentos/${doc.title}`);
+                        doc.content = await response.text();
+                    }
+                }
+
+                const context = documents.map(doc => `Título: ${doc.title}\nContenido: ${doc.content}`).join('\n\n---\n\n');
+                const systemPrompt = `Tu única función es responder preguntas basándote en el CONTEXTO DE LOS DOCUMENTOS SUBIDOS que te doy. NADA MÁS. Si la información no está en el CONTEXTO, tu única respuesta debe ser un chiste o una frase divertida sobre que no tienes esa información. No saludes, no pidas disculpas, no añadas nada fuera del CONTEXTO. Tu conocimiento del mundo está limitado a lo que está en el CONTEXTO.\n\nCONTEXTO DE LOS DOCUMENTOS SUBIDOS:\n${context || 'No hay documentos proporcionados.'}`;
+                const messages = [ { role: 'system', content: systemPrompt }, { role: 'user', content: userInput } ];
+                const botResponse = await callOpenRouter(messages);
+                
+                conversations[convIndex].history.push({ role: 'assistant', content: botResponse });
+                saveConversations();
+                displayBotMessage(botResponse, null, true);
+
+            } catch (error) {
+                console.error('Error al contactar con OpenRouter:', error);
+                let friendlyError = error.message;
+                if (error.message.includes("Provider returned error")) {
+                    friendlyError = "El modelo seleccionado parece estar experimentando problemas. Por favor, intenta con otro modelo desde el menú de Ajustes o reintenta más tarde.";
+                }
+                displayErrorMessage(friendlyError, true, true, userInput);
+                conversations[convIndex].history.pop();
+                saveConversations();
+            } finally {
+                loadingIndicator.classList.add('hidden');
+                toggleForm(true);
+            }
+        }
+
+        // --- FUNCIONES DE API (OPENROUTER) ---
+        async function callOpenRouter(messages) {
+            const body = { model: OPENROUTER_MODEL, messages: messages };
+            const response = await fetch(OPENROUTER_API_URL, {
+                method: 'POST',
+                headers: {
+                    'Authorization': `Bearer ${OPENROUTER_API_KEY}`,
+                    'Content-Type': 'application/json',
+                    'HTTP-Referer': 'https://localhost', 
+                    'X-Title': 'Agente RAG'
+                },
+                body: JSON.stringify(body),
+            });
+
+            if (!response.ok) {
+                const errorData = await response.json();
+                throw new Error(`Error de OpenRouter: ${errorData.error.message || response.statusText}`);
+            }
+
+            const data = await response.json();
+            return data.choices[0].message.content;
+        }
+
+        async function handleRephraseRequest() {
+            const userInput = messageInput.value.trim();
+            if (!userInput) return;
+
+            toggleForm(false);
+            rephraseBtn.innerHTML = `<div class="w-5 h-5 border-2 border-gray-400 dark:border-gray-500 border-t-transparent rounded-full animate-spin"></div>`;
+            const prompt = `Reformula la siguiente pregunta para que sea más clara y efectiva. Devuelve solo la pregunta reformulada, sin preámbulos ni comillas. Pregunta: "${userInput}"`;
+
+            try {
+                const rephrasedText = await callOpenRouter([{role: 'user', content: prompt}]);
+                messageInput.value = rephrasedText;
+                messageInput.focus();
+                updateSendButtonState();
+                autoResizeTextarea();
+            } catch (error) {
+                console.error('Error al refrasear:', error);
+                displayErrorMessage('No se pudo refrasear la pregunta.', true, false);
+            } finally {
+                toggleForm(true);
+                rephraseBtn.innerHTML = `<svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-wand-2"><path d="m21.64 3.64-1.28-1.28a1.21 1.21 0 0 0-1.72 0L2.36 18.64a1.21 1.21 0 0 0 0 1.72l1.28 1.28a1.21 1.21 0 0 0 1.72 0L21.64 5.36a1.21 1.21 0 0 0 0-1.72Z"/><path d="m14 7 3 3"/><path d="M5 6v4"/><path d="M19 14v4"/><path d="M10 2v2"/><path d="M7 8H3"/><path d="M21 16h-4"/><path d="M11 3H9"/></svg>`;
+            }
+        }
+
+        async function handleSummaryRequest() {
+            const conversation = conversations.find(c => c.id === activeConversationId);
+            if (!conversation || conversation.history.length < 1) return;
+
+            showSummaryModal("Generando resumen...");
+            const formattedHistory = conversation.history.map(msg => `${msg.role === 'user' ? 'Usuario' : 'Asistente'}: ${msg.content}`).join('\n\n');
+            const prompt = `Resume la siguiente conversación en Markdown. Proporciona un resumen conciso y con viñetas.\n\nConversación:\n${formattedHistory}`;
+
+            try {
+                const summaryText = await callOpenRouter([{role: 'user', content: prompt}]);
+                const summaryHTML = formatResponse(summaryText);
+                summaryContent.innerHTML = summaryHTML;
+            } catch (error) {
+                console.error('Error al resumir:', error);
+                summaryContent.innerHTML = '<p class="text-red-600">No se pudo generar el resumen.</p>';
+            }
+        }
+
+        async function fetchAndPopulateModels() {
+            try {
+                const response = await fetch(OPENROUTER_MODELS_URL);
+                if (!response.ok) throw new Error('No se pudo obtener la lista de modelos.');
+                const { data } = await response.json();
+                const freeModels = data.filter(model => model.id.endsWith(':free'));
+                const recommendedModels = ["meta-llama/llama-3-8b-instruct:free", "mistralai/mistral-7b-instruct:free", "google/gemma-7b-it:free", "nousresearch/nous-hermes-2-mistral-7b-dpo:free"];
+                const sortedModels = freeModels.sort((a, b) => {
+                    const aIndex = recommendedModels.indexOf(a.id);
+                    const bIndex = recommendedModels.indexOf(b.id);
+                    if (aIndex === -1 && bIndex === -1) return a.id.localeCompare(b.id);
+                    if (aIndex === -1) return 1;
+                    if (bIndex === -1) return -1;
+                    return aIndex - bIndex;
+                });
+
+                modelSelect.innerHTML = '';
+                if (sortedModels.length === 0) {
+                    modelSelect.innerHTML = '<option>No se encontraron modelos gratuitos</option>';
+                    return;
+                }
+
+                sortedModels.forEach(model => {
+                    const option = document.createElement('option');
+                    option.value = model.id;
+                    option.textContent = model.name;
+                    if (model.id === OPENROUTER_MODEL) option.selected = true;
+                    modelSelect.appendChild(option);
+                });
+
+                if (![...modelSelect.options].some(opt => opt.value === OPENROUTER_MODEL)) {
+                    if (sortedModels.length > 0) {
+                        OPENROUTER_MODEL = sortedModels[0].id;
+                        modelSelect.value = OPENROUTER_MODEL;
+                        localStorage.setItem('openrouterModel', OPENROUTER_MODEL);
+                    }
+                }
+
+            } catch (error) {
+                console.error("Error cargando modelos:", error);
+                modelSelect.innerHTML = '<option>Error al cargar modelos</option>';
+            }
+        }
+
+        // --- FUNCIONES DE LA INTERFAZ ---
+        const openSidebar = () => {
+            sidebar.classList.remove('-translate-x-full');
+            sidebarOverlay.classList.remove('hidden');
+            if (window.innerWidth >= 768) mainContent.classList.add('md:ml-64');
+        };
+        const closeSidebar = () => {
+            sidebar.classList.add('-translate-x-full');
+            sidebarOverlay.classList.add('hidden');
+            if (window.innerWidth >= 768) mainContent.classList.remove('md:ml-64');
+        };
+        const toggleSidebar = () => {
+            if (sidebar.classList.contains('-translate-x-full')) openSidebar();
+            else closeSidebar();
+        };
+        
+        function formatResponse(text) {
+            if (!text) return '';
+            let html = escapeHTML(text);
+            html = html.replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>');
+            html = html.replace(/\*(.*?)\*/g, '<em>$1</em>');
+            html = html.replace(/^- (.*$)/gm, '<li class="ml-4 list-disc">$1</li>');
+            html = html.replace(/\n/g, '<br>');
+            return html;
+        }
+
+        function displayUserMessage(message, animate = true) {
+            const userMessageHTML = `<div class="${animate ? 'message-fade-in' : ''} flex items-start gap-4 justify-end"><div class="bg-blue-100 dark:bg-blue-900/50 text-gray-800 dark:text-gray-100 rounded-xl p-4 max-w-xl"><p>${escapeHTML(message)}</p></div><div class="bg-gray-700 dark:bg-gray-600 text-white p-2 rounded-full flex-shrink-0 flex items-center justify-center h-10 w-10"><svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-user"><path d="M19 21v-2a4 4 0 0 0-4-4H9a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg></div></div>`;
+            chatContainer.innerHTML += userMessageHTML;
+            if (animate) scrollToBottom();
+        }
+
+        function displayBotMessage(message, sources, animate = true) {
+            const formattedMessage = formatResponse(message);
+            const botMessageHTML = `<div class="${animate ? 'message-fade-in' : ''} flex items-start gap-4"><div class="bg-gray-200 dark:bg-gray-700 p-2 rounded-full flex-shrink-0 flex items-center justify-center h-10 w-10"><svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-bot"><path d="M12 8V4H8"/><rect width="16" height="12" x="4" y="8" rx="2"/><path d="M2 14h2"/><path d="M20 14h2"/><path d="M15 13v2"/><path d="M9 13v2"/></svg></div><div class="bg-gray-100 dark:bg-gray-700/50 rounded-xl p-4 max-w-xl prose dark:prose-invert prose-p:my-2 prose-ul:my-2 prose-li:my-1 prose-hr:my-4">${formattedMessage}</div></div>`;
+            chatContainer.innerHTML += botMessageHTML;
+            if (animate) scrollToBottom();
+        }
+
+        function displayErrorMessage(message, animate = true, retryable = false, userInput = '') {
+            let retryButtonHTML = '';
+            if (retryable) {
+                retryButtonHTML = `<button class="retry-btn mt-2 text-sm font-semibold text-blue-600 dark:text-blue-400 hover:underline">Reintentar</button>`;
+            }
+            const errorMessageHTML = `<div class="${animate ? 'message-fade-in' : ''} flex items-start gap-4"><div class="bg-red-500 text-white p-2 rounded-full flex-shrink-0 flex items-center justify-center h-10 w-10"><svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-shield-alert"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10"/><path d="M12 8v4"/><path d="M12 16h.01"/></svg></div><div class="error-message bg-red-100 dark:bg-red-900/20 text-red-800 dark:text-red-300 rounded-xl p-4 max-w-xl"><p class="font-semibold">Error</p><p>${escapeHTML(message)}</p>${retryButtonHTML}</div></div>`;
+            chatContainer.innerHTML += errorMessageHTML;
+            
+            if (retryable) {
+                const retryBtn = chatContainer.querySelector('.retry-btn:last-of-type');
+                retryBtn.addEventListener('click', () => {
+                    retryBtn.closest('.message-fade-in').remove();
+                    handleUserMessage(userInput);
+                });
+            }
+
+            if (animate) scrollToBottom();
+        }
+
+        function showNotification(message, type = 'info') {
+            const colors = {
+                info: 'bg-blue-500',
+                success: 'bg-green-500',
+                error: 'bg-red-500'
+            };
+            const notification = document.createElement('div');
+            notification.className = `notification transform translate-x-full opacity-0 p-4 rounded-lg text-white text-sm shadow-lg ${colors[type]}`;
+            notification.textContent = message;
+            notificationContainer.appendChild(notification);
+
+            setTimeout(() => {
+                notification.classList.remove('translate-x-full', 'opacity-0');
+            }, 10);
+            
+            setTimeout(() => {
+                notification.classList.add('opacity-0');
+                notification.addEventListener('transitionend', () => notification.remove());
+            }, 3000);
+        }
+
+        function updateSendButtonState() {
+            sendBtn.disabled = messageInput.value.trim().length === 0;
+        }
+        
+        function autoResizeTextarea() {
+            messageInput.style.height = 'auto';
+            const scrollHeight = messageInput.scrollHeight;
+            const maxHeight = 200;
+            messageInput.style.height = Math.min(scrollHeight, maxHeight) + 'px';
+        }
+
+        function toggleForm(isEnabled) {
+            const conversation = conversations.find(c => c.id === activeConversationId);
+            messageInput.disabled = !isEnabled;
+            sendBtn.disabled = !isEnabled || messageInput.value.trim().length === 0;
+            rephraseBtn.disabled = !isEnabled;
+            summarizeBtn.disabled = !isEnabled || !conversation || conversation.history.length === 0;
+        }
+
+        function showSummaryModal(initialContent = '') {
+            summaryModal.classList.remove('hidden', 'pointer-events-none');
+            summaryModal.style.opacity = '1';
+            summaryModal.querySelector('.modal-content').style.transform = 'scale(1)';
+            summaryContent.innerHTML = `<div class="flex items-center justify-center gap-2"><div class="w-5 h-5 border-2 border-gray-400 dark:border-gray-500 border-t-transparent rounded-full animate-spin"></div><p>${initialContent}</p></div>`;
+        }
+
+        function hideSummaryModal() {
+            summaryModal.style.opacity = '0';
+            summaryModal.querySelector('.modal-content').style.transform = 'scale(0.95)';
+            setTimeout(() => { summaryModal.classList.add('hidden', 'pointer-events-none'); }, 300);
+        }
+        
+        function showSettingsModal() {
+            settingsModal.classList.remove('hidden', 'pointer-events-none');
+            settingsModal.style.opacity = '1';
+            settingsModal.querySelector('.modal-content').style.transform = 'scale(1)';
+        }
+
+        function hideSettingsModal() {
+            settingsModal.style.opacity = '0';
+            settingsModal.querySelector('.modal-content').style.transform = 'scale(0.95)';
+            setTimeout(() => { settingsModal.classList.add('hidden', 'pointer-events-none'); }, 300);
+        }
+
+        function scrollToBottom() {
+            const chatArea = document.getElementById('chat-area');
+            chatArea.scrollTop = chatArea.scrollHeight;
+        }
+
+        function escapeHTML(str) {
+            const p = document.createElement('p');
+            p.appendChild(document.createTextNode(str || ''));
+            return p.innerHTML;
+        }
+        
+        async function generateSuggestions() {
+            suggestionContainer.innerHTML = '';
+            let suggestions = [];
+
+            if (documents.length > 0) {
+                const allText = documents.map(doc => doc.content).join(' ');
+                const textSample = allText.substring(0, 2000);
+                const prompt = `Basado en el siguiente texto, genera 4 preguntas contundentes que solo puedan ser respondidas con la información de este texto. No incluyas preguntas genéricas. Devuelve solo las preguntas, cada una en una nueva línea, sin numeración ni viñetas.\n\nTexto:\n${textSample}`;
+                
+                try {
+                    const response = await callOpenRouter([{ role: 'user', content: prompt }]);
+                    suggestions = response.split('\n').filter(q => q.trim().length > 0);
+                } catch (error) {
+                    console.error("Error generando sugerencias:", error);
+                }
+            }
+            
+            if (suggestions.length < 4) {
+                 const defaultSuggestions = [
+                    "Explícame qué es la computación cuántica en términos sencillos",
+                    "Dame ideas para un viaje de fin de semana",
+                    "Escribe un poema corto sobre la lluvia",
+                    "¿Cuál es la receta para hacer una buena paella?"
+                ];
+                suggestions = [...suggestions, ...defaultSuggestions.slice(0, 4 - suggestions.length)];
+            }
+
+            suggestions.slice(0, 4).forEach(text => {
+                const card = document.createElement('div');
+                card.className = 'suggestion-card bg-gray-200 dark:bg-gray-800 p-4 rounded-xl hover:bg-gray-300 dark:hover:bg-gray-700 cursor-pointer transition-colors text-left';
+                card.textContent = text;
+                card.addEventListener('click', () => {
+                    messageInput.value = text;
+                    updateSendButtonState();
+                    autoResizeTextarea();
+                    handleUserMessage(text);
+                });
+                suggestionContainer.appendChild(card);
+            });
+        }
+        
+        // --- INICIALIZACIÓN ---
+        window.onload = () => {
+            const applyTheme = (theme) => {
+                if (theme === 'dark') {
+                    document.documentElement.classList.add('dark');
+                    themeIconLight.classList.add('hidden');
+                    themeIconDark.classList.remove('hidden');
+                } else {
+                    document.documentElement.classList.remove('dark');
+                    themeIconLight.classList.remove('hidden');
+                    themeIconDark.classList.add('hidden');
+                }
+            };
+            const savedTheme = localStorage.getItem('theme');
+            const systemPrefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
+            applyTheme(savedTheme || (systemPrefersDark ? 'dark' : 'light'));
+            themeToggleBtn.addEventListener('click', () => {
+                const newTheme = document.documentElement.classList.contains('dark') ? 'light' : 'dark';
+                localStorage.setItem('theme', newTheme);
+                applyTheme(newTheme);
+            });
+
+            loadSettings();
+            loadConversations();
+            loadDocuments(); 
+            fetchAndPopulateModels();
+            
+            renderSidebar();
+            renderActiveChat();
+            updateAdminUI();
+
+            messageInput.focus();
+            toggleForm(true);
+            updateSendButtonState();
+
+            // --- MANEJADORES DE EVENTOS GLOBALES ---
+            homeBtn.addEventListener('click', handleNewChat);
+            newChatBtn.addEventListener('click', handleNewChat);
+            menuBtn.addEventListener('click', toggleSidebar);
+            sidebarOverlay.addEventListener('click', closeSidebar);
+            settingsBtn.addEventListener('click', showSettingsModal);
+            closeSettingsModalBtn.addEventListener('click', hideSettingsModal);
+            settingsModal.addEventListener('click', (e) => { if (e.target === settingsModal) hideSettingsModal(); });
+            
+            saveSettingsBtn.addEventListener('click', () => {
+                const newModel = modelSelect.value;
+                if (newModel) {
+                    OPENROUTER_MODEL = newModel;
+                    localStorage.setItem('openrouterModel', newModel);
+                }
+                hideSettingsModal();
+            });
+
+            chatForm.addEventListener('submit', (event) => {
+                event.preventDefault();
+                const userInput = messageInput.value.trim();
+                if (!userInput) return;
+                handleUserMessage(userInput);
+            });
+
+            rephraseBtn.addEventListener('click', handleRephraseRequest);
+            summarizeBtn.addEventListener('click', handleSummaryRequest);
+            closeModalBtn.addEventListener('click', hideSummaryModal);
+            summaryModal.addEventListener('click', (e) => { if (e.target === summaryModal) hideSummaryModal(); });
+
+            messageInput.addEventListener('input', () => {
+                updateSendButtonState();
+                autoResizeTextarea();
+            });
+            
+            messageInput.addEventListener('keydown', (e) => {
+                if (e.key === 'Enter' && !e.shiftKey) {
+                    e.preventDefault();
+                    chatForm.requestSubmit();
+                }
+            });
+
+            // --- MANEJADORES DE EVENTOS DE ADMIN ---
+            adminLoginBtn.addEventListener('click', handleAdminLogin);
+            adminLoginForm.addEventListener('submit', handleAdminFormSubmit);
+            cancelAdminLoginBtn.addEventListener('click', hideAdminLoginModal);
+            confirmDeleteBtn.addEventListener('click', confirmDelete);
+            cancelDeleteBtn.addEventListener('click', hideConfirmDeleteModal);
+        };
+    </script>
+</body>
+</html>
