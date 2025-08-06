@@ -546,10 +546,7 @@
 
         // --- LÓGICA PRINCIPAL DEL CHAT (RAG) --- 
         async function handleUserMessage(userInput) {
-            if (!OPENROUTER_API_KEY) {
-                displayErrorMessage("La API Key de OpenRouter no está configurada.", true, false, userInput);
-                return;
-            }
+            
 
             if (!activeConversationId) {
                 activeConversationId = crypto.randomUUID();
